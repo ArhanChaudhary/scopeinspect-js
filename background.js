@@ -80,6 +80,7 @@ async function searchTree(root, url, tabId, isImportant) {
     let leaves = [
       ...(properties.result ?? []),
       ...(properties.internalProperties ?? []),
+      ...(properties.privateProperties ?? []),
     ].slice(0, LEAF_LIMIT);
 
     for (let leaf of leaves) {
