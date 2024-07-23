@@ -1,4 +1,4 @@
-const SEARCH_LIMIT = 500;
+const SEARCH_LIMIT = 100;
 const LEAF_LIMIT = 10;
 
 async function onContentMessage(objStr, sender, sendResponse) {
@@ -27,14 +27,8 @@ async function onContentMessage(objStr, sender, sendResponse) {
   }
   secretObj.value = secretObj.result;
 
-  let closureData = await searchTree(
-    secretObj,
-    url,
-    tabId,
-    (leaf) =>
-      leaf.value?.subtype?.startsWith("internal#") &&
-      (leaf.value.subtype !== "internal#scopeList" ||
-        leaf.value.description[7] !== "0")
+  let closureData = await searchTree(secretObj, url, tabId, (leaf) =>
+    leaf.value?.subtype?.startsWith("internal#")
   );
 
   let nameToValue = {};
@@ -43,7 +37,6 @@ async function onContentMessage(objStr, sender, sendResponse) {
       nameToValue[name] = value.value;
     }
   }
-  chrome.debugger.detach({ tabId });
   sendResponse(nameToValue);
 }
 
@@ -53,12 +46,17 @@ async function searchTree(root, url, tabId, isImportant) {
   let ret = [];
   while (queue.length && len < SEARCH_LIMIT) {
     let curr = queue.shift();
+    len++;
     if (
       !curr.value ||
       // gets rid of arguments, caller, length, name, and symbol stuff
       // might generate false negatives though
       curr.writable === false ||
+      // probably not the best way to do this
+      (curr.enumerable === false && curr.name !== "constructor") ||
       ["internal#location", null].includes(curr.value.subtype) ||
+      (curr.value.subtype === "internal#scopeList" &&
+        curr.value.description[7] === "0") ||
       (curr.name !== undefined &&
         curr.value.value !== undefined &&
         url[curr.name] === curr.value.value)
@@ -83,7 +81,6 @@ async function searchTree(root, url, tabId, isImportant) {
       ...(properties.result ?? []),
       ...(properties.internalProperties ?? []),
     ].slice(0, LEAF_LIMIT);
-    len += leaves.length;
 
     for (let leaf of leaves) {
       if (isImportant(leaf)) {
@@ -96,8 +93,13 @@ async function searchTree(root, url, tabId, isImportant) {
   return ret;
 }
 
-chrome.runtime.onMessage.addListener(function () {
-  onContentMessage(...arguments);
-  // https://stackoverflow.com/a/20077854/12230735
+chrome.runtime.onMessage.addListener(function (
+  objStr,
+  sender,
+  sendResponse
+) {
+  onContentMessage(objStr, sender, sendResponse).finally(() =>
+    chrome.debugger.detach({ tabId: sender.tab.id })
+  );
   return true;
 });
