@@ -14,11 +14,6 @@ async function onContentMessage(objStr, sender, sendResponse) {
     "Runtime.evaluate",
     {
       expression: objStr,
-      includeCommandLineAPI: true,
-      throwOnSideEffect: true,
-      timeout: 500,
-      disableBreaks: true,
-      replMode: true,
     }
   );
   if (secretObj.result.subtype === "error") {
@@ -27,17 +22,23 @@ async function onContentMessage(objStr, sender, sendResponse) {
   }
   secretObj.value = secretObj.result;
 
-  let closureData = await searchTree(secretObj, url, tabId, (leaf) =>
-    leaf.value?.subtype?.startsWith("internal#")
-  );
+  try {
+    let closureData = await searchTree(secretObj, url, tabId, (leaf) =>
+      leaf.value?.subtype?.startsWith("internal#")
+    );
 
-  let nameToValue = {};
-  for (let { name, value } of closureData) {
-    if (!nameToValue[name]) {
-      nameToValue[name] = value.value;
+    let nameToValue = {};
+    for (let { name, value } of closureData) {
+      if (!nameToValue[name]) {
+        nameToValue[name] = value.value;
+      }
     }
+    sendResponse(nameToValue);
+  } catch (e) {
+    sendResponse({ error: `Error while inspecting scope: ${e}` });
+  } finally {
+    chrome.debugger.detach({ tabId: sender.tab.id });
   }
-  sendResponse(nameToValue);
 }
 
 async function searchTree(root, url, tabId, isImportant) {
@@ -94,13 +95,7 @@ async function searchTree(root, url, tabId, isImportant) {
   return ret;
 }
 
-chrome.runtime.onMessage.addListener(function (
-  objStr,
-  sender,
-  sendResponse
-) {
-  onContentMessage(objStr, sender, sendResponse).finally(() =>
-    chrome.debugger.detach({ tabId: sender.tab.id })
-  );
+chrome.runtime.onMessage.addListener(function () {
+  onContentMessage(...arguments);
   return true;
 });
