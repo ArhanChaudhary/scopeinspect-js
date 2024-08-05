@@ -9,20 +9,20 @@ async function onContentMessage(objStr, sender, sendResponse) {
     chrome.debugger.attach({ tabId }, "1.2", resolve)
   );
 
-  let secretObj = await chrome.debugger.sendCommand(
-    { tabId },
-    "Runtime.evaluate",
-    {
-      expression: objStr,
-    }
-  );
-  if (secretObj.result.subtype === "error") {
-    sendResponse({ error: "Object reference does not exist" });
-    return;
-  }
-  secretObj.value = secretObj.result;
-
   try {
+    let secretObj = await chrome.debugger.sendCommand(
+      { tabId },
+      "Runtime.evaluate",
+      {
+        expression: objStr,
+      }
+    );
+    if (secretObj.result.subtype === "error") {
+      sendResponse({ error: "Object reference does not exist" });
+      return;
+    }
+    secretObj.value = secretObj.result;
+
     let closureData = await searchTree(secretObj, url, tabId, (leaf) =>
       leaf.value?.subtype?.startsWith("internal#")
     );
