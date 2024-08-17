@@ -5,9 +5,7 @@ async function onContentMessage(objStr, sender, sendResponse) {
   let url = new URL(sender.url);
   let tabId = sender.tab.id;
 
-  await new Promise((resolve) =>
-    chrome.debugger.attach({ tabId }, "1.2", resolve)
-  );
+  await chrome.debugger.attach({ tabId }, "1.3");
 
   try {
     let secretObj = await chrome.debugger.sendCommand(
