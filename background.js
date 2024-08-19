@@ -1,7 +1,7 @@
 const SEARCH_LIMIT = 100;
 const LEAF_LIMIT = 10;
 
-async function onContentMessage(objStr, sender, sendResponse) {
+async function onContentMessage(_, sender, sendResponse) {
   let url = new URL(sender.url);
   let tabId = sender.tab.id;
 
@@ -12,9 +12,13 @@ async function onContentMessage(objStr, sender, sendResponse) {
       { tabId },
       "Runtime.evaluate",
       {
-        expression: objStr,
+        expression: "window.__obj",
       }
     );
+    if (secretObj.result.type === "undefined") {
+      sendResponse({ error: "Invalid object reference" });
+      return;
+    }
     if (secretObj.result.subtype === "error") {
       sendResponse({ error: "Object reference does not exist" });
       return;
