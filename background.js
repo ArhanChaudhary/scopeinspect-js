@@ -1,5 +1,5 @@
 const SEARCH_LIMIT = 100;
-const LEAF_LIMIT = 10;
+const LEAF_LIMIT = 75;
 
 async function onContentMessage(_, sender, sendResponse) {
   let url = new URL(sender.url);
@@ -8,6 +8,7 @@ async function onContentMessage(_, sender, sendResponse) {
   await chrome.debugger.attach({ tabId }, "1.3");
 
   try {
+      console.log(tabId);
     let secretObj = await chrome.debugger.sendCommand(
       { tabId },
       "Runtime.evaluate",
@@ -25,17 +26,18 @@ async function onContentMessage(_, sender, sendResponse) {
     }
     secretObj.value = secretObj.result;
 
-    let closureData = await searchTree(secretObj, url, tabId, (leaf) =>
-      leaf.value?.subtype?.startsWith("internal#")
-    );
+    let closureData = await searchTree(secretObj, url, tabId, (leafNames) => leafNames.includes("pvUciQueue"));
 
-    let nameToValue = {};
-    for (let { name, value } of closureData) {
-      if (!nameToValue[name]) {
-        nameToValue[name] = value.value;
+    await chrome.debugger.sendCommand(
+      { tabId },
+      "Runtime.callFunctionOn",
+      {
+        functionDeclaration: `function(data) { window.retObj = data; }`,
+        arguments: [{ objectId: closureData.objectId }],
+        objectId: closureData.parentId || undefined,
       }
-    }
-    sendResponse(nameToValue);
+    );
+    sendResponse({error:0});
   } catch (e) {
     sendResponse({ error: `Error while inspecting scope: ${e}` });
   } finally {
@@ -43,13 +45,30 @@ async function onContentMessage(_, sender, sendResponse) {
   }
 }
 
-async function searchTree(root, url, tabId, isImportant) {
-  let queue = [root];
+async function getProperties(tabId, objectId) {
+  return await chrome.debugger.sendCommand(
+    { tabId },
+    "Runtime.getProperties",
+    {
+      objectId: objectId,
+      ownProperties: true,
+    }
+  );
+}
+
+async function searchTree(root, url, tabId, isImportant, maxDepth = 6) {
+  let queue = [{node: root, depth: 0, parent: null}];
   let len = 0;
   let ret = [];
+    console.log('aaa');
   while (queue.length && len < SEARCH_LIMIT) {
-    let curr = queue.shift();
+    let {node: curr, depth, parent} = queue.shift();
     len++;
+    console.log({"currn: ": curr.name ? curr.name : "", "curr : ": curr.value , "curtype": curr.type});
+    //if (isModule(curr.value)) {
+      //continue;
+    //}
+
     if (
       !curr.value ||
       // gets rid of arguments, caller, length, name, and symbol stuff
@@ -71,30 +90,29 @@ async function searchTree(root, url, tabId, isImportant) {
       continue;
     }
 
-    let properties = await chrome.debugger.sendCommand(
-      { tabId },
-      "Runtime.getProperties",
-      {
-        objectId: curr.value.objectId,
-        ownProperties: true,
-      }
-    );
+    if (depth >= maxDepth) {
+      continue;
+    }
+
+    let properties = await getProperties(tabId, curr.value.objectId);
 
     let leaves = [
-      ...(properties.result ?? []),
-      ...(properties.internalProperties ?? []),
-      ...(properties.privateProperties ?? []),
-    ].slice(0, LEAF_LIMIT);
+          ...(properties.result ?? []),
+          ...(properties.internalProperties ?? []),
+          ...(properties.privateProperties ?? []),
+        ].slice(0, LEAF_LIMIT);
+    
+    let leafNames = leaves.map(leaf => leaf?.name ?? '');
+
+    let important = isImportant(leafNames) 
+      if (important )
+          return {objectId: curr.value.objectId, parentId: parent ? parent.value.objectId : null}
+
 
     for (let leaf of leaves) {
-      if (isImportant(leaf)) {
-        ret.push(...(await searchTree(leaf, url, tabId, () => false)));
-      } else {
-        queue.push(leaf);
-      }
+        queue.push({node: leaf, depth: depth + 1, parent: curr});
     }
   }
-  return ret;
 }
 
 chrome.runtime.onMessage.addListener(function () {
