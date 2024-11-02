@@ -41,3 +41,4 @@ console.log(await scopeInspect(obj, ["hiddenProperty"]));
 
 ```
 
+PS: The orignal library has no license. I can't add legally. 
