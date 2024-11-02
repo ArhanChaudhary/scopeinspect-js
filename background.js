@@ -70,7 +70,7 @@ async function searchTree(root, url, tabId, isImportant, maxDepth = 6) {
   while (queue.length && len < SEARCH_LIMIT) {
     let { node: curr, depth, parent } = queue.shift();
     len++;
-    console.log({ "currn: ": curr.name ? curr.name : "", "curr : ": curr.value, "curtype": curr.type });
+    console.log({ "currn: ": curr.name ? curr.name : "", "curr : ": curr.value, "curtype": curr.value?.subttype });
     //if (isModule(curr.value)) {
     //continue;
     //}
@@ -109,6 +109,7 @@ async function searchTree(root, url, tabId, isImportant, maxDepth = 6) {
     ].slice(0, LEAF_LIMIT);
 
     let leafNames = leaves.map(leaf => leaf?.name ?? '');
+      console.log(leafNames)
 
     let important = isImportant(leafNames)
     if (important)
