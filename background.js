@@ -1,47 +1,53 @@
 const SEARCH_LIMIT = 100;
 const LEAF_LIMIT = 75;
 
-async function onContentMessage(_, sender, sendResponse) {
-  let url = new URL(sender.url);
-  let tabId = sender.tab.id;
+async function onContentMessage(message, sender, sendResponse) {
+  if (message.action === "scopeInspect") {
+    let url = new URL(sender.url);
+    let tabId = sender.tab.id;
 
-  await chrome.debugger.attach({ tabId }, "1.3");
+    await chrome.debugger.attach({ tabId }, "1.3");
 
-  try {
+    try {
       console.log(tabId);
-    let secretObj = await chrome.debugger.sendCommand(
-      { tabId },
-      "Runtime.evaluate",
-      {
-        expression: "window.__obj",
+      let secretObj = await chrome.debugger.sendCommand(
+        { tabId },
+        "Runtime.evaluate",
+        {
+          expression: "window.__obj",
+        }
+      );
+      if (secretObj.result.type === "undefined") {
+        sendResponse({ error: "Invalid object reference" });
+        return;
       }
-    );
-    if (secretObj.result.type === "undefined") {
-      sendResponse({ error: "Invalid object reference" });
-      return;
-    }
-    if (secretObj.result.subtype === "error") {
-      sendResponse({ error: "Object reference does not exist" });
-      return;
-    }
-    secretObj.value = secretObj.result;
-
-    let closureData = await searchTree(secretObj, url, tabId, (leafNames) => leafNames.includes("pvUciQueue"));
-
-    await chrome.debugger.sendCommand(
-      { tabId },
-      "Runtime.callFunctionOn",
-      {
-        functionDeclaration: `function(data) { window.retObj = data; }`,
-        arguments: [{ objectId: closureData.objectId }],
-        objectId: closureData.parentId || undefined,
+      if (secretObj.result.subtype === "error") {
+        sendResponse({ error: "Object reference does not exist" });
+        return;
       }
-    );
-    sendResponse({error:0});
-  } catch (e) {
-    sendResponse({ error: `Error while inspecting scope: ${e}` });
-  } finally {
-    chrome.debugger.detach({ tabId: sender.tab.id });
+      secretObj.value = secretObj.result;
+
+      // Check if all specified leaf names are included
+      const leafNamesToCheck = message.leafNames; // Assuming leafNames is passed in the message
+      const isImportant = (leafNames) => leafNamesToCheck.every(name => leafNames.includes(name));
+
+      let closureData = await searchTree(secretObj, url, tabId, isImportant);
+
+      await chrome.debugger.sendCommand(
+        { tabId },
+        "Runtime.callFunctionOn",
+        {
+          functionDeclaration: `function(data) { window.retObj = data; }`,
+          arguments: [{ objectId: closureData.objectId }],
+          objectId: closureData.parentId || undefined,
+        }
+      );
+      sendResponse({ error: 0 });
+    } catch (e) {
+      sendResponse({ error: `Error while inspecting scope: ${e}` });
+    } finally {
+      chrome.debugger.detach({ tabId: sender.tab.id });
+    }
   }
 }
 
@@ -57,16 +63,16 @@ async function getProperties(tabId, objectId) {
 }
 
 async function searchTree(root, url, tabId, isImportant, maxDepth = 6) {
-  let queue = [{node: root, depth: 0, parent: null}];
+  let queue = [{ node: root, depth: 0, parent: null }];
   let len = 0;
   let ret = [];
-    console.log('aaa');
+  console.log('aaa');
   while (queue.length && len < SEARCH_LIMIT) {
-    let {node: curr, depth, parent} = queue.shift();
+    let { node: curr, depth, parent } = queue.shift();
     len++;
-    console.log({"currn: ": curr.name ? curr.name : "", "curr : ": curr.value , "curtype": curr.type});
+    console.log({ "currn: ": curr.name ? curr.name : "", "curr : ": curr.value, "curtype": curr.type });
     //if (isModule(curr.value)) {
-      //continue;
+    //continue;
     //}
 
     if (
@@ -97,20 +103,20 @@ async function searchTree(root, url, tabId, isImportant, maxDepth = 6) {
     let properties = await getProperties(tabId, curr.value.objectId);
 
     let leaves = [
-          ...(properties.result ?? []),
-          ...(properties.internalProperties ?? []),
-          ...(properties.privateProperties ?? []),
-        ].slice(0, LEAF_LIMIT);
-    
+      ...(properties.result ?? []),
+      ...(properties.internalProperties ?? []),
+      ...(properties.privateProperties ?? []),
+    ].slice(0, LEAF_LIMIT);
+
     let leafNames = leaves.map(leaf => leaf?.name ?? '');
 
-    let important = isImportant(leafNames) 
-      if (important )
-          return {objectId: curr.value.objectId, parentId: parent ? parent.value.objectId : null}
+    let important = isImportant(leafNames)
+    if (important)
+      return { objectId: curr.value.objectId, parentId: parent ? parent.value.objectId : null }
 
 
     for (let leaf of leaves) {
-        queue.push({node: leaf, depth: depth + 1, parent: curr});
+      queue.push({ node: leaf, depth: depth + 1, parent: curr });
     }
   }
 }
