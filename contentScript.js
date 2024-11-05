@@ -1,7 +1,15 @@
-document.addEventListener("scopeInspect", async function () {
+document.addEventListener("scopeInspect", async function (event) {
+  const leafNames = event.detail.leafNames;
+
+  // Pass the leaf names as a parameter
+  const response = await chrome.runtime.sendMessage({
+    action: "scopeInspect",
+    leafNames: leafNames
+  });
+
   document.dispatchEvent(
     new CustomEvent("scopeInspectResponse", {
-      detail: await chrome.runtime.sendMessage(undefined),
+      detail: response,
     })
   );
-});
+}); 
